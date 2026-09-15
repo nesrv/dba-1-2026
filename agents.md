@@ -24,7 +24,10 @@ pdf\dba1_16_replica_overview_logical.pdf
 
 сделай md-текст для лектора к слайдам l1 на основе pdf\dba1_01_tools_install.pdf
 
-сделай md-текст для лектора к слайдам l2 на основе pdf\dba1_02_tools_psql.pdf.pdf
+сделай md-текст для лектора к слайдам l3-l16
+
+
+ на основе pdf\dba1_02_tools_psql.pdf.pdf
 чуть меньше словоблудия и больше конкретики и интересных фактов
 
 сделай тоже самое для l3
@@ -33,3 +36,6 @@ pdf\dba1_16_replica_overview_logical.pdf
 
  или dba1_00_introduction.html
 лектор старший разработчик, в текст сделай более разговорным с программистским сленгом и юмором
+
+сгенери readme.md для данного курса + использую инфу о преподавателе 
+https://profi.ru/profile/SerovNY2/?srsltid=AU7gw4W6QPRbuJGxFa2tMlTjYl9-LQeihgMUpZm7ERuYCfGsloVb2WP3
