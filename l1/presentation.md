@@ -2,7 +2,6 @@
 marp: true
 paginate: false
 ---
-
 ![bg contain](slide1.png)
 
 ---
