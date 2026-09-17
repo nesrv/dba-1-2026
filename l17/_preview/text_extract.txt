@@ -1,0 +1,75 @@
+=== PAGE 1 ===
+Р Сценарии испо 16 Авт © Postgres Professional, 2017 Ав Фо Испо Некомм демонстрации) разрешае испо Postgres Professional. курса. Обратная связь Отзывы, заме edu@postgrespro.ru Отказ Компания Postgre любые повреждения и у прямым или непрямым, специал ма ка пре Professional не обязана предост обнов
+
+=== PAGE 2 ===
+> 2 Т емы Испо льзо вани е физическ ой реплик ации Испо льзо вани е логическ ой реплик ации <div id="pf3" class="pf w0 h0"
+
+=== PAGE 3 ===
+3 Физическ Г Балансиров Р Не От
+
+=== PAGE 4 ===
+4 Г синхронна запр они б основной серв (мастер) сегменты W select, insert update, delete рез (реплика) wal sender wal receiver startup synchronous_commit synchronous_standby_ hot_standby_feedback max_standby_streaming_d Р зависит от ее пре О це сервера треб при э Надежность обеспе synchronous_commit зна Для синхронной реп synchronous_standby_names серверов (реплик). Чтобы реплик нужно п задержку Чтобы запросы к реплик сервер, выключаем обра С такими настройк конфликтов они б пре ( Заме высок э
+
+=== PAGE 5 ===
+5 Балансировк запр дол сог основной серв (мастер) сегменты W select, insert update, delete рез (реплика) wal sender wal receiver startup synchronous_commit hot_standby_feedback max_standby_streaming_d Друг нагрузки на чтение. OL запросами. Это позво с основным сервером, чтобы запросы гарантированно не прерывались из-за кон в Включаем обра доста ( Синхронная репл треб фиксаци к реплик Для обеспе на обоих серверах позв (ценой сильного но тог Надежное и прозра испо (см. мо
+
+=== PAGE 6 ===
+6 Р запр (но не треб мастер чтоб основной серв (мастер) сегменты W select, insert update, delete рез (реплика) wal sender wal receiver startup synchronous_commit hot_standby_feedback max_standby_streaming_d - Еще о разног а длите Кроме распреде позв основном сервере могут заде к раз Из э о связь ( конфликту до бесконе Поскольку для д можно, при наличии архива, от выставить параме max_standby_streaming_delay необ Т копирования. Р Г в
+
+=== PAGE 7 ===
+7 Неск основной серв (мастер) сегменты W select, insert update, delete рез (реплика A) wal sender рез (реплика B) wal sender wal receiver startup wal receiver startup pg_copy_physical_rep К основном специальных наст ка и о растиражирова функцией pg_copy_physical_replication Обычно так собственно распре (см. мо
+
+=== PAGE 8 ===
+> <div id="pf9" class="pf w0 h0"
+
+=== PAGE 9 ===
+9 позво не по обра Каск основной серв (мастер) сегменты W select, insert update, delete рез (реплика B) wal sender рез (реплика A) wal sender startup wal receiver startup recovery_target_timeline synchronous_standby_ или Несколько реплик, соз нагрузку на се записей. Для снижения серверы пере дальше от маст Схема мониторинг нескольких серверах. Если совершится пере сервер recovery_target_timeline новой линии (эт Заме основной сервер може с непосредств в к или А во
+
+=== PAGE a ===
+10 От «машина на опре основной серв (мастер) сегменты W select, insert update, delete рез (реплика) wal sender wal receiver startup recovery_min_apply_del hot_standby_feedback Зада в прошлом Восстанов решае Друг записи с заданно треб Откладывае о фикса «раньше времени» мног вызва Т проб еще есть, поскольку с Дальнейшее проигр функции pg_wal_replay_pause, пок Функцией pg_get_wa приостановки. Если принято решение продо завершаю про у параме
+
+=== PAGE b ===
+> 1 1 Логическ ая реплик ац ия К онсо лидац ия и общие справо чники Обнов ление о сновной версии серве ра Мастер -мастер Л огическ ое дек о диро вание на физич е ск ой репли к е <div id="pfc" class="pf w0 h0"
+
+=== PAGE c ===
+12 пол данных неск Конс централь сервер select, insert update, delete региональный сервер wal sender региональный сервер wal sender select, insert update, delete сегменты W select, insert update, delete сегменты W logical repl. worker logical repl. worker сегменты W Пусть имею рабо в конс Для решения на рег необ пуб приво центральног Поскольку реплик серверами необ ка вынужд Есть множеств логики ок интервал времени.
+
+=== PAGE d ===
+13 реплик Общие справо централь сервер региональный сервер региональный сервер сегменты W сегменты W сегменты W select, insert update, delete wal sender wal sender select, insert update, delete logical repl. worker select, insert update, delete logical repl. worker Друг акт серверах. В э пуб обнов
+
+=== PAGE e ===
+> <div id="pff" class="pf w0 h0"
+
+=== PAGE f ===
+15 Обнов мастер основной сервер рез сервер 15.12 wal sender wal receiver startup сегменты W select, insert update, delete 15.12 Логическ основной версии сервера бе с минимальным Допустим, имеет
+
+=== PAGE 10 ===
+16 Обнов основной сервер сегменты W select, insert update, delete рез сервер wal sender 15.12 репликация все клиенты еще не подклю рез сервер wal sender wal receiver startup 15.12 основной сервер сегменты W logical repl. worker 16.8 Соз на нег На основном сервере предыдущей верс таб реплицирую запрещены.
+
+=== PAGE 11 ===
+17 Обнов основной сервер сегменты W select, insert update, delete wal sender 15.12 основной сервер сегменты W рез сервер logical repl. worker wal sender 16.8 клиенты еще не подклю новая физическая реплика wal receiver startup рез сервер wal sender wal receiver startup 15.12 Соз пре В итог PostgreSQL. Эта структ
+
+=== PAGE 12 ===
+18 Обнов клиенты переключены на новый сервер основной сервер сегменты W рез сервер wal sender 16.8 wal receiver startup select, insert update, delete После э останав насколько плавно Надо име он наклады сложен, чем использов выполн
+
+=== PAGE 13 ===
+19 кластер, в к Мас основной серв основной серв select, insert update, delete сегменты W select, insert update, delete сегменты W wal sender logical repl. worker logical repl. worker wal sender Зада с во г Для решения можно использова пере к друг реплик Коне чтобы изб таб идентифик с разными диапазонами ключей. Т филь Надо учитыват логичес г синхронной репл согласованность данных между серверами. Кроме того, никаки сре у э
+
+=== PAGE 14 ===
+20 логический слот при соз сегменты W select, insert update, delete wal sender физическая реплика wal sender wal receiver startup logical repl. worker пуб сервер подпи Дек wal_level hot_standby_feedback pg_log_standby_snaps На размеща нагрузки с мастера. На реплике hot_standby_feedback реплике При соз о номерах ак bgwriter и checkpointer мас не можно вызва
+
+=== PAGE 15 ===
+21 Итоги Физическая для реш обеспе балансировк раз и др. Л
+
+=== PAGE 16 ===
+22 Прак 1. серверами alpha и beta. 2. с задержк 3. сервере gamma данные появляю задержк 4. 5. реплики. После завершения прак данных и сл конфигурации.
+
+=== PAGE lab ===
+> <div id="pf17" class="pf w0 h0"
+
+=== PAGE 17 ===
+23 Прак 1. и beta с обра уровень W репликации. 2. на сервер gamma, помес реплику. Чт репликации на beta, воспольз pg_log_standby_snapshot. 2. Перенесите структ любым спосо переносите. Пуб а в строке Верните конфигурацию системы к исходной: у данных, сл конфигурации.
+
+=== PAGE opt ===
+>
+

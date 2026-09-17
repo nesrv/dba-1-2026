@@ -2,8 +2,8 @@
 
 ## Репликация: обзор физической репликации
 
-> Клон файлов + бесконечный replay WAL.
-> Реплика читает, мастер пишет. Split-brain — ваш враг №1.
+> По PDF `dba1_15_replica_overview_physical`. Чуть больше исходника.
+> Клон файлов + бесконечный replay WAL. Split-brain — враг №1.
 
 ---
 
@@ -11,7 +11,8 @@
 
 Тема: **физическая (streaming) репликация** — обзор.
 
-Связка с l14: pg_basebackup и replication protocol мы уже видели. Сегодня — постоянный standby вместо разового restore.
+Связка с l14: `pg_basebackup` и replication protocol уже видели.
+Сегодня — постоянный standby вместо разового restore. Детали — в DBA3.
 
 ---
 
@@ -20,27 +21,27 @@
 1. Задачи и виды репликации  
 2. Физическая репликация  
 3. Уровни журнала (`wal_level`)  
-4. Сценарии использования реплики  
+4. Варианты использования реплики  
 5. Переключение на реплику (promote)
-
-Детали — в DBA3; здесь карта местности.
 
 ---
 
 ## Слайд 3 — Задачи и виды репликации
 
-Зачем несколько серверов с **одними данными**:
+Один сервер = точка отказа и потолок масштаба. Несколько серверов с **одними данными**:
 
 | задача | идея |
 |--------|------|
 | отказоустойчивость | сбой одного узла |
 | высокая доступность | плановые работы без даунтайма |
-| масштабирование | разнести read/write |
+| масштабирование | разнести нагрузку |
 
 | вид | уровень синхронизации |
 |-----|------------------------|
 | **физическая** | страницы + статусы транзакций (WAL) |
-| **логическая** | строки таблиц (следующая лекция l16) |
+| **логическая** | строки таблиц (l16) |
+
+Репликация = процесс **синхронизации** этих данных.
 
 ---
 
@@ -52,9 +53,9 @@
 |-------------|--|
 | роли | master → replica, **односторонне** |
 | совместимость | **бинарная**: та же major, та же платформа |
-| гранularity | **весь кластер**, не одна БД |
+| granularity | **весь кластер**, не одна БД |
 
-«Механическое» применение — реплика не «понимает» SQL, только байты WAL.
+Применение «механическое» — реплика не «понимает» SQL, только байты WAL.
 
 ---
 
@@ -68,12 +69,12 @@
 
 Два канала доставки:
 
-1. **streaming** — основной, минимальный lag  
-2. **file-based** — из archive, отстаёт до switch сегмента  
+1. **streaming** — основной, минимальный lag (до нуля при sync);  
+2. **file-based** — из archive, отстаёт до switch сегмента.
 
-На практике: stream + archive fallback.
+Практика: stream + archive fallback. Не получили запись по протоколу — пробуем файл из архива.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/high-availability
+Доки: [high-availability](https://postgrespro.ru/docs/postgresql/16/high-availability).
 
 ---
 
@@ -83,23 +84,24 @@
 
 | значение | crash recovery | hot backup / physical replica |
 |----------|----------------|------------------------------|
-| `minimal` | да | **нет** (часть изменений в data, мимо WAL) |
+| `minimal` | да | **нет** (часть изменений сразу на диск, мимо WAL) |
 | `replica` | да | **да** (default с PG 10) |
 
-До PG 10 default был `minimal` — репликация «не заводилась» из коробки.
+До PG 10 default был `minimal` — репликация «из коробки» не заводилась.
+Сменили на `replica`, потому что backup/replication — повседневность.
 
-Логическая репликация — **`logical`**, это уже l16.
+Логическая репликация — **`logical`**, это l16.
 
 ---
 
 ## Слайд 7 — Настройка физической репликации
 
-Минимальный чеклист:
+Минимальный чеклист (PG 10+ дефолты уже ок):
 
 ```sql
 SELECT name, setting FROM pg_settings
 WHERE name IN ('wal_level','max_wal_senders');
--- replica, 10 — ок
+-- replica, 10
 
 SELECT type, user_name, address, auth_method
 FROM pg_hba_file_rules()
@@ -113,9 +115,10 @@ rm -rf ~/tmp/backup
 pg_basebackup --pgdata=~/tmp/backup -R --checkpoint=fast
 ```
 
-**`-R`**: пишет `primary_conninfo` + **`standby.signal`** → режим постоянного recovery.
+**`-R`**: пишет `primary_conninfo` в `postgresql.auto.conf` + **`standby.signal`**
+→ режим постоянного recovery (не обычный restore).
 
-Дальше: stop replica cluster → mv в `$PGDATA` → chown postgres → start.
+Дальше: stop replica → `mv` в `$PGDATA` → `chown postgres` → start.
 
 ---
 
@@ -142,7 +145,8 @@ SELECT * FROM pg_stat_replication \gx
 -- sync_state: async | sync | ...
 ```
 
-`*_lsn` — где WAL на каждом этапе pipeline. `sync_state` — sync/async/quorum (детали в DBA3).
+`*_lsn` — где WAL на каждом этапе pipeline.  
+`application_name` часто = `cluster_name` реплики (например `16/replica`).
 
 ---
 
@@ -157,9 +161,11 @@ SELECT * FROM pg_stat_replication \gx
 | pg_basebackup с реплики | VACUUM, ANALYZE, REINDEX |
 | | GRANT/REVOKE, nextval, FOR UPDATE |
 
+Триггеры и advisory locks на реплике **не срабатывают**.
+
 `hot_standby = off` → **warm standby**: подключений нет вообще.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/hot-standby
+Доки: [hot-standby](https://postgrespro.ru/docs/postgresql/16/hot-standby).
 
 ---
 
@@ -172,26 +178,27 @@ CREATE TABLE test(id int PRIMARY KEY, descr text);
 INSERT INTO test VALUES (1, 'Раз');
 
 -- replica :5433
-SELECT * FROM test;   -- пусто → INSERT на master → 'Раз'
+SELECT * FROM test;   -- пусто → после INSERT на master → 'Раз'
 
 INSERT INTO test VALUES (2, 'Два');
 -- ERROR: cannot execute INSERT in a read-only transaction
 ```
 
-Реплика **read-only** — это фича, не баг.
+Read-only — фича, не баг. Бэкап с реплики — ок, помните про lag.
 
 ---
 
 ## Слайд 11 — Надёжность: синхронная репликация
 
-Аналог `synchronous_commit` для **реплики**:
+Аналог `synchronous_commit`, но для **реплики**:
 
-- async — master не ждёт replica  
-- sync — commit ждёт, пока WAL **принят** синхронной standby  
+- **async** — master не ждёт replica;  
+- **sync** — commit ждёт, пока WAL **принят** синхронной standby.
 
-Надёжнее (данные на втором узле), но **медленнее**. Replica упала — commits **висят**, пока не вернётся.
+Надёжнее (данные на втором узле даже при смерти primary), но **медленнее**.
+Replica упала — commits **висят**, пока не вернётся (или не уберёте из `synchronous_standby_names`).
 
-Схема на слайде: sync replication между master и одной standby.
+Есть промежуточные уровни sync — детали в DBA3.
 
 ---
 
@@ -203,22 +210,26 @@ INSERT INTO test VALUES (2, 'Два');
 
 Конфликт recovery vs query:
 
-1. vacuum на master удалил версии строк, нужные SELECT на replica  
-2. exclusive lock на master vs query на replica  
+1. vacuum на master удалил версии строк, нужные SELECT на replica;  
+2. exclusive lock на master vs query на replica.
 
-Параметры: **`max_standby_streaming_delay`**, **`hot_standby_feedback`**. Реплика может **отставать** — для отчётов обычно ок.
+«Отчётную» реплику настраивают так, чтобы конфликтующие WAL **откладывались** —
+реплика может **отставать**; для аналитики обычно ок.
+
+Параметры: **`max_standby_streaming_delay`**, **`hot_standby_feedback`**.
 
 ---
 
 ## Слайд 13 — Несколько реплик
 
-Несколько standby → **read scaling** для OLTP-read.
+Несколько standby → **read scaling** для коротких OLTP-read.
 
-Нюанс: **нет глобальной read-consistency** между репликами. Прочитали с A и B — можете увидеть разные эпохи.
+Обратная связь (feedback) + короткие запросы → master не удалит строки, нужные replica
+(как будто запросы крутились на master).
 
-Обратная связь (feedback) + короткие read-запросы → master не удалит строки, нужные replica.
-
-Балансировку read-трафика PG **не делает** — Patroni, HAProxy, pgpool, app-side routing.
+Нюанс: **нет глобальной read-consistency** между репликами.
+Прочитали с A и B — можете увидеть разные эпохи (даже при sync).
+Балансировку PG **не делает** — Patroni, HAProxy, pgpool, app-side routing.
 
 ---
 
@@ -228,9 +239,9 @@ Replica A → Replica B → …: меньше **walsender**-нагрузки н�
 
 Минусы:
 
-- больше **lag** дальше по цепочке  
-- **синхронная** каскадная репликация **не поддерживается** (sync только с прямой standby)  
-- feedback от **всех** узлов всё равно идёт на master  
+- больше **lag** дальше по цепочке;  
+- **синхронная** каскадная репликация **не поддерживается** (sync только с прямой standby);  
+- feedback от **всех** узлов всё равно идёт на master.
 
 ---
 
@@ -240,10 +251,10 @@ Replica A → Replica B → …: меньше **walsender**-нагрузки н�
 
 «Машина времени» без полноценного PITR из архива:
 
-- откатить `DROP TABLE` idiot-user  
-- быстрее, чем restore base + WAL  
+- откатить `DROP TABLE` / кривой UPDATE;  
+- быстрее, чем restore base + WAL.
 
-Настройки — DBA3. Снимков «как pg_dump на прошлое» в PG нет.
+Снимков «как pg_dump на прошлое» в PG нет. Настройки — DBA3.
 
 ---
 
@@ -254,9 +265,10 @@ Replica A → Replica B → …: меньше **walsender**-нагрузки н�
 | **плановый** | maintenance master, switchover |
 | **аварийный** | master мёртв, failover |
 
-По умолчанию — **ручной** promote. Автомат — Patroni, repmgr, Pacemaker и т.д.
+По умолчанию — **ручной** promote. Автомат — Patroni, repmgr, Pacemaker…
 
-Главное: приложение должно ходить **только на одного** primary. Иначе **split-brain** — два независимых мира данных.
+Главное: приложение ходит **только на одного** primary. Иначе **split-brain** —
+два независимых мира данных, склеить почти невозможно.
 
 ---
 
@@ -276,42 +288,63 @@ SELECT pg_is_in_recovery();  -- f
 INSERT INTO test VALUES (2, 'Два');  -- теперь можно писать
 ```
 
-Два **независимых** кластера. Обратно «склеить» без боли нельзя.
+Два **независимых** кластера. Обратно «склеить» без боли нельзя — подчеркните это вслух.
 
 ---
 
 ## Слайд 19 — Итоги / Практика
-*(в презентации файл `slide19.png`, без slide18)*
+
+*(в презентации `slide19.png`, без slide18)*
 
 **Итоги:**
 
-- физическая реплика = WAL stream + replay  
-- весь кластер, одна major, master→replica  
-- hot standby, sync/async, cascade, delay — сценарии  
+- физическая реплика = WAL stream (или файлы) + replay;  
+- весь кластер, одна major, master→replica;  
+- hot standby, sync/async, cascade, delay — сценарии.
 
-**Практика:**
+**Практика 1 — Sync:**
 
-1. **Sync:**  
-   `ALTER SYSTEM SET synchronous_standby_names = '"16/replica"';`  
-   `pg_reload_conf();` — `sync_state = sync`  
-   stop replica → транзакция на master **блокируется** до start replica  
+```sql
+-- на мастере (имя = cluster_name реплики)
+ALTER SYSTEM SET synchronous_standby_names = '"16/replica"';
+SELECT pg_reload_conf();
+SELECT sync_state FROM pg_stat_replication;  -- sync
 
-2. **Конфликты:**  
-   `max_standby_streaming_delay = 0` → long query на replica + VACUUM на master →  
-   `canceling statement due to conflict with recovery`  
-   `hot_standby_feedback = on` → vacuum на master **не удаляет** пока нужно replica  
+-- stop replica → CREATE TABLE на master зависает
+-- start replica → CREATE TABLE завершается
+```
 
-Подсказка: `pg_sleep(5)` в SELECT для искусственно долгого запроса.
+`synchronous_commit` по умолчанию `on`, но без `synchronous_standby_names`
+синхронизация только с локальным диском.
+
+**Практика 2 — Конфликты:**
+
+```sql
+-- на реплике
+ALTER SYSTEM SET max_standby_streaming_delay = 0;
+SELECT pg_reload_conf();
+SELECT pg_sleep(5), count(*) FROM test;  -- долгий запрос
+
+-- на мастере параллельно: DELETE + VACUUM
+-- → canceling statement due to conflict with recovery
+
+-- потом на реплике:
+ALTER SYSTEM SET hot_standby_feedback = on;
+-- VACUUM на master: "dead but not yet removable" — запрос не убивается
+```
+
+Мораль: `max_standby_streaming_delay` откладывает **replay на реплике**;  
+`hot_standby_feedback` откладывает **vacuum на мастере**.
+
+Не забудьте `RESET synchronous_standby_names` после лабы.
 
 ---
 
 ## Финал
 
-На память:
-
 1. `-R` + `standby.signal` vs разовый restore;  
 2. hot standby — только read;  
 3. `pg_stat_replication`, promote / split-brain;  
-4. sync ждёт replica, feedback vs max_standby_streaming_delay.
+4. sync ждёт replica; feedback vs `max_standby_streaming_delay`.
 
-Физическая реплика — фундамент HA. Логическая — в l16, там другие компромиссы.
+Физическая реплика — фундамент HA. Логическая — в l16, другие компромиссы.

@@ -1,3 +1,27 @@
+homework.md
+отформатируй текст, начиная с часть 13
+
+
+l13\speaker-notes.md
+сделай более подробнее с интереснее
+
+
+текста к слайдам должно быть немного больще чем в исходнике
+pdf\dba1_13_access_overview.pdf
+
+
+
+
+
+l14\speaker-notes.md
+l15\speaker-notes.md
+l16\speaker-notes.md
+
+l17\speaker-notes.md
+сгенери тоже самое 
+
+
+
 из dba1_01_tools_install.html или из pdf\dba1_01_tools_install.pdf 
 нужно сделай слайды презентации типа
 
@@ -8,6 +32,8 @@ images\slide3.png
 исправь косячные слайды 6,8,10,13, 15
 
 из pdf\dba1_00_introduction.pdf сделай слайды в папку l0
+
+l17\dba3_07_replica_usecases.html сделай слайды в папку l7
 
 
 из pdf\dba1_06_arch_vacuum_overview.pdf в папку l6

@@ -2,8 +2,8 @@
 
 ## Резервное копирование: обзор
 
-> Два мира: SQL-дампы vs копия файлов + WAL.
-> Логика — гибко и кросс-версионно. Физика — быстро и до точки во времени.
+> По PDF `dba1_14_backup_overview`. Чуть больше исходника.
+> Два мира: SQL-дампы vs файлы + WAL. Бэкап без плана restore — просто архив.
 
 ---
 
@@ -11,24 +11,23 @@
 
 Тема: **обзор резервного копирования** в PostgreSQL.
 
-Факт: «бэкап» без плана восстановления — это просто архив на диске. Сегодня — оба семейства инструментов и как они стыкуются с WAL.
+Сегодня — оба семейства: логика (`COPY` / `pg_dump` / `pg_dumpall`) и физика
+(`pg_basebackup`, архив WAL, PITR). Дальше на курсе детали разворачиваются в DBA3.
 
 ---
 
 ## Слайд 2 — Темы
 
-Два больших блока:
-
 1. **Логическое** резервное копирование  
-2. **Физическое** + архив WAL
+2. **Физическое** + непрерывная архивация WAL  
 
-Потом практика и практика+ — там pg_dump, pg_basebackup и PITR «на коленке».
+Практика: dump/restore, basebackup, потоковый архив + PITR.
 
 ---
 
 ## Слайд 3 — Логическое копирование
 
-План секции:
+План блока:
 
 - что такое логическая копия  
 - копия **таблицы** (`COPY`)  
@@ -39,34 +38,34 @@
 
 ## Слайд 4 — Логическая копия
 
-Суть: текстовый набор **SQL-комmand**, который поднимает объект с нуля.
+Суть: набор **SQL-команд**, который поднимает объект / БД / кластер с нуля.
+По сути текстовый файл — можно вырезать таблицу, переименовать схему, поправить типы.
 
-| плюс | минус |
-|------|-------|
+| Плюс | Минус |
+|------|--------|
 | отдельный объект / база / кластер | медленно на больших объёмах |
 | другая **major**-версия PG | только момент дампа, не PITR |
 | другая архитектура (x86 ↔ arm) | индексы пересоздаются заново |
-| можно править дамп руками | |
 
-Файл — обычный текст: вырезать таблицу, переименовать схему, мигрировать выборочно.
+Двоичная совместимость не нужна — нужна совместимость **команд**.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/backup-dump
+Доки: [backup-dump](https://postgrespro.ru/docs/postgresql/16/backup-dump).
 
 ---
 
 ## Слайд 5 — COPY: копия таблицы
 
-**COPY** — быстрый обмен **строками** (не DDL).
+**COPY** — быстрый обмен **строками** (не DDL). Быстрее пачки `INSERT`: меньше round-trip и разбора.
 
 | | серверный `COPY` | клиентский `\copy` |
 |--|------------------|---------------------|
 | где | SQL на сервере | meta-команда psql |
 | файл | на **сервере**, доступ у `postgres` | на **клиенте** |
-| скорость | >> пачки `INSERT` | то же по сути |
 
-Форматы: text, csv, binary. NULL в text — `\N`, пустая строка — отдельное значение.
+Форматы: text, csv, binary. Параметры: разделитель, представление NULL и т. д.  
+`COPY … FROM` **добавляет** строки — таблицу не очищает (нужен `TRUNCATE` отдельно).
 
-Доки: https://postgrespro.ru/docs/postgresql/16/sql-copy
+Доки: [sql-copy](https://postgrespro.ru/docs/postgresql/16/sql-copy), [app-psql](https://postgrespro.ru/docs/postgresql/16/app-psql).
 
 ---
 
@@ -85,12 +84,13 @@ COPY t TO STDOUT;
 
 TRUNCATE t;
 COPY t FROM STDIN;
--- ввод строк, завершить \.
+-- ввод, завершить \.
+\pset null '<null>'
+SELECT * FROM t;
 ```
 
-Лайфхак: `\pset null '<null>'` — и NULL в SELECT видно явно.
-
-Пустая строка и NULL в psql без `\pset` выглядят одинаково — на экзамене и в проде это классическая ловушка.
+Факт: пустая строка и NULL в обычном SELECT выглядят одинаково — в COPY NULL = `\N`.
+Классическая ловушка на экзамене и в проде.
 
 ---
 
@@ -100,19 +100,18 @@ COPY t FROM STDIN;
 
 | формат | восстановление |
 |--------|----------------|
-| plain (SQL) | `psql -f dump.sql` |
-| custom/directory/tar | **pg_restore** (выбор объектов, `-j` параллель) |
+| plain (SQL) | `psql -f` |
+| custom / directory / tar | **pg_restore** (выбор объектов, `-j`) |
 
-Фишки: `-t`, `-n`, `--data-only`, `--schema-only`, `-j` при custom/directory.
+Фишки: `-t`, `-n`, `--data-only`, `--schema-only`, параллель при custom/directory.
 
 **Восстановление:**
 
-- новая БД из **`template0`** (не template1 — туда могли напихать объектов)  
-- **роли и tablespace** создать заранее (они кластерные)  
-- после restore — **`ANALYZE`**
+- новая БД из **`template0`** (не template1 — туда могли напихать объектов, они попадут в dump);  
+- **роли и tablespace** создать заранее (они кластерные);  
+- после restore — **`ANALYZE`**.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/app-pgdump  
-https://postgrespro.ru/docs/postgresql/16/app-pgrestore
+Доки: [pg_dump](https://postgrespro.ru/docs/postgresql/16/app-pgdump), [pg_restore](https://postgrespro.ru/docs/postgresql/16/app-pgrestore).
 
 ---
 
@@ -120,18 +119,18 @@ https://postgrespro.ru/docs/postgresql/16/app-pgrestore
 
 **pg_dumpall** — весь кластер: все БД + **globals** (роли, tablespaces).
 
-- только plain SQL → только `psql`  
-- **без параллелизма** (внутри — pg_dump по очереди)  
-- запускать от **суперпользователя**
+- только plain SQL → только `psql`;  
+- **без параллелизма** (внутри — pg_dump по очереди);  
+- запускать от **суперпользователя**.
 
 На больших объёмах:
 
 ```bash
 pg_dumpall --globals-only > globals.sql
-pg_dump -j 4 -Fc -f db.dump mydb   # по базам отдельно
+pg_dump -j 4 -Fc -f db.dump mydb
 ```
 
-Доки: https://postgrespro.ru/docs/postgresql/16/app-pg-dumpall
+Доки: [pg_dumpall](https://postgrespro.ru/docs/postgresql/16/app-pg-dumpall).
 
 ---
 
@@ -143,33 +142,32 @@ pg_dump -d backup_overview --create
 
 В дампе:
 
-- `CREATE DATABASE ... TEMPLATE = template0`  
-- DDL таблицы  
-- данные через **`COPY ... FROM stdin`** (не INSERT — быстрее)
+- `CREATE DATABASE … TEMPLATE = template0` (ключ `--create`);  
+- DDL таблицы;  
+- данные через **`COPY … FROM stdin`** (не INSERT — быстрее).
 
-**`\restrict` / `\unrestrict`** (PG 16+): psql блокирует meta-команды `\...` пока идёт restore — чтобы `\` в данных не устроил сюрприз.
+**`\restrict` / `\unrestrict`** (PG 16+): psql блокирует meta-команды `\…`, пока идёт restore —
+чтобы `\` в данных не исполнил что-то «весёлое». Безопасный режим с одноразовым токеном.
 
 ---
 
 ## Слайд 10 — pg_dump: pipe в другую базу
 
-Копия одной таблицы между базами:
-
 ```bash
 pg_dump -d backup_overview --table=t | psql -d backup_overview2
 ```
 
-Unix-pipe — нормальный паттерн для «перекинуть объект без файла».
+Unix-pipe — нормальный паттерн «перекинуть объект без файла на диске».
 
-Факт: plain-дамп + psql = самый прозрачный путь; custom + pg_restore = когда нужен `-j` и cherry-pick объектов.
+Факт: plain + psql = прозрачно; custom + pg_restore = когда нужны `-j` и cherry-pick объектов.
 
 ---
 
 ## Слайд 11 — Физическое копирование
 
-План секции:
+План блока:
 
-- физическая копия  
+- что такое физическая копия  
 - холодная / горячая  
 - протокол репликации  
 - автономные копии  
@@ -181,28 +179,30 @@ Unix-pipe — нормальный паттерн для «перекинуть 
 
 Механизм = **crash recovery**: файлы кластера + нужный WAL.
 
-| плюс | минус |
-|------|-------|
+| Плюс | Минус |
+|------|--------|
 | быстрое восстановление | только **весь кластер** |
 | PITR с архивом WAL | та же major + архитектура |
 | горячая копия без stop | |
 
-Согласованный снимок при аккуратном shutdown — WAL не нужен. Горячий снимок — **несогласованный**, recovery доведёт.
+Холодный аккуратный shutdown → файлы согласованы, WAL часто не нужен.  
+Горячий снимок → несогласованный; recovery доведёт. Архив WAL → состояние **на любой момент**.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/backup-file  
-https://postgrespro.ru/docs/postgresql/16/continuous-archiving
+Доки: [backup-file](https://postgrespro.ru/docs/postgresql/16/backup-file),
+[continuous-archiving](https://postgrespro.ru/docs/postgresql/16/continuous-archiving).
 
 ---
 
 ## Слайд 13 — Горячо или холодно?
 
-| | холодный (stop) | «грязный» stop / snapshot ОС | горячий (работает) |
-|--|-----------------|------------------------------|---------------------|
+| | холодный (stop) | «грязный» stop / snapshot ОС | горячий |
+|--|-----------------|------------------------------|---------|
 | файлы | согласованы или + WAL | нужен WAL с checkpoint | несогласованы |
 | WAL | часто не нужен | с последней CP | за время копирования |
 | инструмент | `tar`, `cp` | snapshot + WAL | **pg_basebackup** |
 
-«Просто скопировать `$PGDATA` на работающем сервере» — **нельзя**. Нужен checkpoint + WAL или pg_basebackup.
+«Просто скопировать `$PGDATA` на работающем сервере» — **нельзя**.
+Нужен checkpoint + WAL или штатный `pg_basebackup`.
 
 ---
 
@@ -217,9 +217,9 @@ https://postgrespro.ru/docs/postgresql/16/continuous-archiving
 3. копирование файлов кластера  
 4. WAL с момента CP до конца копирования  
 
-Restore: развернуть каталог → `pg_ctl start` → recovery → готово.
+Restore: развернуть каталог → start → recovery → готово. Всё «в коробке» копии.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/app-pgbasebackup
+Доки: [pg_basebackup](https://postgrespro.ru/docs/postgresql/16/app-pgbasebackup).
 
 ---
 
@@ -229,28 +229,28 @@ Restore: развернуть каталог → `pg_ctl start` → recovery →
 
 | компонент | роль |
 |-----------|------|
-| **wal_sender** | отдаёт поток WAL / команды бэкапа |
+| **wal_sender** | поток WAL / команды бэкапа |
 | **replication slot** | «не удаляй WAL, пока клиент не прочитал» |
 | `wal_level = replica` | достаточно для physical backup/stream |
 | `max_wal_senders` | лимит одновременных wal_sender |
 
-Доступ: роль с **REPLICATION**, строка `replication` в **pg_hba.conf**.
+Доступ: роль с **REPLICATION** + строка `replication` в **pg_hba.conf**.  
+Дефолты (PG 10+) уже позволяют локальный бэкап.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/protocol-replication
+Доки: [protocol-replication](https://postgrespro.ru/docs/postgresql/16/protocol-replication).
 
 ---
 
 ## Слайд 16 — Автономная копия (схема)
 
-Картинка: мастер пишет WAL, **pg_basebackup** забирает base + сегменты.
+Мастер пишет WAL, сегменты циклически удаляются.  
+**pg_basebackup** забирает base + сегменты за время копирования — обычно на другой хост.
 
-WAL на мастере **переиспользуется** (старые сегменты удаляются) — слот не даёт удалить то, что ещё не доехало до бэкапа/реплики.
+Слот не даёт мастеру выкинуть WAL, который ещё не доехал до клиента.
 
 ---
 
 ## Слайд 17 — Автономная резервная копия (демо)
-
-Проверки:
 
 ```sql
 SELECT name, setting FROM pg_settings
@@ -262,20 +262,20 @@ WHERE 'replication' = ANY(database);
 ```
 
 ```bash
-pg_lsclusters   # main :5432, replica :5433 down
+pg_lsclusters   # main :5432 online, replica :5433 down
 rm -rf ~/tmp/basebackup
 pg_basebackup --pgdata=~/tmp/basebackup --checkpoint=fast
 ```
 
-**`--checkpoint=fast`** — сброс dirty buffers без пауз (до ~4.5 мин spread по умолчанию). На демо — чтобы не ждать.
+**`--checkpoint=fast`**: dirty buffers пишутся без пауз (иначе spread до ~4.5 мин).
+На демо — чтобы не ждать; в проде — осознанный пик IO.
 
 ---
 
 ## Слайд 18 — Восстановление (схема)
 
-Base backup разворачивается на **другом** сервере → recovery → **независимый** инстанс на момент конца бэкапа.
-
-Мастер ушёл вперёд — это нормально. Это не реплика, а **fork** состояния.
+Base backup разворачивается на **другом** сервере → recovery → **независимый** инстанс
+на момент конца бэкапа. Мастер ушёл вперёд — нормально. Это **fork**, не реплика.
 
 ---
 
@@ -292,6 +292,7 @@ sudo pg_ctlcluster 16 replica start
 В каталоге: `backup_label`, `backup_manifest`, `pg_wal/` с WAL за бэкап.
 
 Два сервера **независимы**: INSERT на main не виден на replica и наоборот.
+Покажите обе стороны — иначе «реплика» в голове слушателей путается с restore.
 
 ---
 
@@ -303,7 +304,7 @@ sudo pg_ctlcluster 16 replica start
 |----------------|-----------------|
 | `archive_command` при **смене** сегмента | **pg_receivewal** по replication |
 | задержка до fill сегмента | почти realtime |
-| всё внутри PG | отдельный процесс/сервис ОС |
+| всё внутри PG | отдельный процесс ОС |
 
 ---
 
@@ -316,19 +317,19 @@ archive_command = 'cp %p /archive/%f'   # пример; %p=path, %f=filename
 
 Процесс **archiver**:
 
-- сегмент заполнился → shell-команда  
-- exit 0 → сегмент можно удалить с мастера  
-- не 0 → retry, WAL копится  
+- сегмент заполнился → shell-команда;  
+- exit 0 → сегмент можно удалить;  
+- не 0 → retry, WAL копится на мастере.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/continuous-archiving
+Доки: [continuous-archiving](https://postgrespro.ru/docs/postgresql/16/continuous-archiving).
 
 ---
 
 ## Слайд 22 — Файловый архив (схема)
 
-Мастер → archiver → **отдельное хранилище**. Там же лежат periodic base backups.
+Мастер → archiver → **отдельное хранилище** (+ periodic base backups).
 
-Архив обычно **не на том же диске**, что PGDATA — иначе смысл теряется при смерти сервера.
+Архив **не на том же диске**, что PGDATA — иначе смерть диска убивает и данные, и бэкап.
 
 ---
 
@@ -336,12 +337,13 @@ archive_command = 'cp %p /archive/%f'   # пример; %p=path, %f=filename
 
 **pg_receivewal**:
 
-- replication + **слот** (обязательно в проде)  
-- пишет сегменты как на мастере; неполный — **`.partial`**  
-- старт: после последнего полного в каталоге, или текущий сегмент если пусто  
-- **не демонизируется** — systemd/supervisor ваш друг
+- replication + **слот** (в проде обязательно);  
+- пишет сегменты как сервер; неполный — **`.partial`**;  
+- старт: после последнего полного в каталоге, или текущий сегмент если пусто;  
+- **не демонизируется** — systemd/supervisor ваш друг;  
+- смена primary → перезапуск с новыми параметрами.
 
-Доки: https://postgrespro.ru/docs/postgresql/16/app-pgreceivewal
+Доки: [pg_receivewal](https://postgrespro.ru/docs/postgresql/16/app-pgreceivewal).
 
 ---
 
@@ -349,7 +351,8 @@ archive_command = 'cp %p /archive/%f'   # пример; %p=path, %f=filename
 
 **wal_sender** на мастере ↔ **pg_receivewal** на архивном хосте.
 
-Учитывайте слот в **`max_wal_senders`** — каждый receivewal + каждая реплика = sender.
+Учитывайте слот в **`max_wal_senders`**: каждый receivewal + каждая реплика = sender.
+Пишет **сразу**, не ждёт конца сегмента.
 
 ---
 
@@ -366,8 +369,8 @@ Restore:
 1. развернуть base  
 2. **`restore_command`** (обратная archive_command)  
 3. целевая точка (**recovery target**)  
-4. файл **`recovery.signal`**  
-5. start → managed recovery → promote или stop on target  
+4. файл **`recovery.signal`** (содержимое игнорируется)  
+5. start → managed recovery  
 
 ---
 
@@ -375,13 +378,15 @@ Restore:
 
 **restore_command** тянет `%f` из архива в `pg_wal/`.
 
-Подводный камень: **текущий незаполненный** сегмент на упавшем мастере в файловый архив **не попал**. Иногда его можно **руками** докинуть.
+Подводный камень файлового архива: **текущий незаполненный** сегмент на упавшем
+мастере в архив **не попал**. Иногда его можно **руками** докинуть в `pg_wal` standby.
+При сбое archive_command таких сегментов может быть несколько.
 
 ---
 
 ## Слайд 27 — Целевая точка восстановления
 
-По умолчанию — **все доступные WAL**. Recovery target — остановиться в нужный **timestamp/LSN/name**.
+По умолчанию — **все доступные WAL**. Recovery target — остановиться на timestamp / LSN / name.
 
 Максимальная потеря ≈ один неархивированный partial-сегмент (если не спасли руками).
 
@@ -391,7 +396,8 @@ Restore:
 
 Recovery закончился → сервер **обычный primary**: пишет WAL, снова архивирует.
 
-Failover-кандон: новый primary должен быть **не слабее** старого, иначе «мы восстановились и умерли от нагрузки».
+Failover-канон: новый primary должен быть **не слабее** старого по железу —
+иначе «восстановились и умерли от нагрузки».
 
 ---
 
@@ -400,10 +406,10 @@ Failover-кандон: новый primary должен быть **не слаб�
 | логика | физика |
 |--------|--------|
 | COPY, pg_dump, pg_dumpall | pg_basebackup |
-| SQL, гибкость | файлы + WAL |
+| SQL, гибкость, кросс-версия | файлы + WAL, та же major |
 | момент дампа | PITR с архивом |
 
-Три утилиты на память: **pg_dump**, **pg_basebackup**, **pg_receivewal** (или archive_command).
+Три утилиты: **pg_dump**, **pg_basebackup**, **pg_receivewal** (или `archive_command`).
 
 ---
 
@@ -412,7 +418,7 @@ Failover-кандон: новый primary должен быть **не слаб�
 **Практика:**
 
 1. БД + таблица  
-2. `pg_dump -f ... --create` → DROP → `psql -f`  
+2. `pg_dump -f … --create` → DROP → `psql -f`  
 3. `pg_basebackup` → изменить main → restore на **replica :5433** → старые данные  
 
 **Практика+** (потоковый архив + PITR):
@@ -431,19 +437,16 @@ echo "restore_command = 'cp /var/lib/postgresql/archive/%f %p || cp /var/lib/pos
 touch .../recovery.signal
 ```
 
-`.partial` в restore_command — must have для streaming archive.
-
+`.partial` в restore_command — must have для streaming archive.  
 Уборка: `pkill pg_receivewal`, drop slot, stop replica.
 
 ---
 
 ## Финал
 
-На выход:
-
 1. логика vs физика — когда что;  
-2. template0, globals, ANALYZE после pg_restore;  
-3. автономный base backup vs base + архив;  
-4. `\restrict`, `.partial`, recovery.signal.
+2. `template0`, globals, `ANALYZE` после restore;  
+3. автономный base vs base + архив;  
+4. `\restrict`, `.partial`, `recovery.signal`.
 
-Бэкап, который вы ни разу не восстанавливали, — вера, не инженерия.
+Бэкап, который ни разу не восстанавливали, — вера, не инженерия.
